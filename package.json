@@ -1,0 +1,15 @@
+{
+  "name": "quorum-challenge",
+  "version": "1.0.0",
+  "description": "Script to process legislative voting data from CSV files and generate summaries of support and opposition for bills and legislators.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "author": "Lucas Ferreira <lucas.182.ferreira@hotmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0"
+  }
+}
