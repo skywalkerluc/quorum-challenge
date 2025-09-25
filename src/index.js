@@ -1,60 +1,113 @@
-const fs = require("fs");
-const { readCsvFile, writeCsvFile } = require("./csvHandler");
-const { processVotes } = require("./voteProcessor");
+/**
+ * Aplicação principal para processamento de dados de votação legislativa
+ * 
+ * Este script processa dados de votação de projetos de lei e gera relatórios
+ * de suporte e oposição para legisladores e projetos.
+ */
+const CsvService = require('./services/csvService');
+const VoteProcessingService = require('./services/voteProcessingService');
+const DataValidator = require('./utils/validators');
+const logger = require('./utils/logger');
+const { PATHS, CSV_HEADERS } = require('./config/constants');
 
-const ensureDirectoryExists = (filePath) => {
-  const directory = filePath.substring(0, filePath.lastIndexOf("/"));
-  if (!fs.existsSync(directory)) {
-    fs.mkdirSync(directory, { recursive: true });
+class VoteProcessorApp {
+  constructor() {
+    this.csvService = CsvService;
+    this.voteProcessingService = new VoteProcessingService();
   }
-};
 
-(async () => {
-  try {
-    const votesData = await readCsvFile("data/input/votes.csv");
-    const voteResultsData = await readCsvFile("data/input/vote_results.csv");
-    const billsData = await readCsvFile("data/input/bills.csv");
-    const legislatorsData = await readCsvFile("data/input/legislators.csv");
+  /**
+   * Executa o processamento completo dos dados
+   */
+  async run() {
+    try {
+      logger.info('Starting vote processing application');
 
-    const processedVotes = processVotes(
-      votesData,
-      voteResultsData,
-      billsData,
-      legislatorsData
-    );
+      // Carrega dados de entrada
+      const inputData = await this.loadInputData();
+      
+      // Valida dados de entrada
+      DataValidator.validateAllInputData(
+        inputData.votes,
+        inputData.voteResults,
+        inputData.bills,
+        inputData.legislators
+      );
 
-    const legislatorsOutputPath =
-      "data/output/legislators-support-oppose-count.csv";
-    const billsOutputPath = "data/output/bills.csv";
+      // Processa dados de votação
+      const processedData = await this.voteProcessingService.processVotingData(
+        inputData.votes,
+        inputData.voteResults,
+        inputData.bills,
+        inputData.legislators
+      );
 
-    ensureDirectoryExists(legislatorsOutputPath);
-    ensureDirectoryExists(billsOutputPath);
+      // Salva dados processados
+      await this.saveOutputData(processedData);
 
-    await writeCsvFile(
-      legislatorsOutputPath,
-      [
-        { id: "id", title: "id" },
-        { id: "name", title: "name" },
-        { id: "num_supported_bills", title: "num_supported_bills" },
-        { id: "num_opposed_bills", title: "num_opposed_bills" },
-      ],
-      processedVotes.legislatorSupport
-    );
+      logger.info('Vote processing application completed successfully');
+      console.log('✅ Arquivos CSV gerados com sucesso!');
+      console.log(`📊 Processados ${processedData.legislatorSupport.length} legisladores`);
+      console.log(`📋 Processados ${processedData.billSupport.length} projetos de lei`);
 
-    await writeCsvFile(
-      billsOutputPath,
-      [
-        { id: "bill_id", title: "id" },
-        { id: "title", title: "title" },
-        { id: "supporter_count", title: "supporter_count" },
-        { id: "opposer_count", title: "opposer_count" },
-        { id: "sponsor", title: "primary_sponsor" },
-      ],
-      processedVotes.billSupport
-    );
-
-    console.log("CSV files successfully written.");
-  } catch (error) {
-    console.error("Error processing votes:", error);
+    } catch (error) {
+      logger.error('Application failed', { error: error.message, stack: error.stack });
+      console.error('❌ Erro ao processar dados:', error.message);
+      process.exit(1);
+    }
   }
-})();
+
+  /**
+   * Carrega todos os dados de entrada
+   */
+  async loadInputData() {
+    logger.info('Loading input data files');
+    
+    const filePaths = [
+      PATHS.INPUT.VOTES,
+      PATHS.INPUT.VOTE_RESULTS,
+      PATHS.INPUT.BILLS,
+      PATHS.INPUT.LEGISLATORS
+    ];
+
+    const [votes, voteResults, bills, legislators] = await this.csvService.readMultipleCsvFiles(filePaths);
+
+    return {
+      votes,
+      voteResults,
+      bills,
+      legislators
+    };
+  }
+
+  /**
+   * Salva dados processados em arquivos CSV
+   */
+  async saveOutputData(processedData) {
+    logger.info('Saving output data files');
+
+    const outputPromises = [
+      this.csvService.writeCsvFile(
+        PATHS.OUTPUT.LEGISLATORS,
+        CSV_HEADERS.LEGISLATORS,
+        processedData.legislatorSupport
+      ),
+      this.csvService.writeCsvFile(
+        PATHS.OUTPUT.BILLS,
+        CSV_HEADERS.BILLS,
+        processedData.billSupport
+      )
+    ];
+
+    await Promise.all(outputPromises);
+    logger.info('Output data files saved successfully');
+  }
+}
+
+// Executa a aplicação
+if (require.main === module) {
+  const app = new VoteProcessorApp();
+  app.run();
+}
+
+module.exports = VoteProcessorApp;
